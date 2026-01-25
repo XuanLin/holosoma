@@ -9,6 +9,9 @@ t1_29dof_command = CommandManagerCfg(
     setup_terms={
         "locomotion_gait": CommandTermCfg(
             func="holosoma.managers.command.terms.locomotion:LocomotionGait",
+            params={
+                "gait_period": 0.4,  # 2.5 Hz for running
+            },
         ),
         "locomotion_command": CommandTermCfg(
             func="holosoma.managers.command.terms.locomotion:LocomotionCommand",
