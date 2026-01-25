@@ -390,3 +390,106 @@ def alive(env) -> torch.Tensor:
         Reward tensor [num_envs]
     """
     return torch.ones(env.num_envs, dtype=torch.float, device=env.device)
+
+# Arm swing reward
+def arm_momentum_coordination(
+    env,
+    weight_symmetry: float = 1.0,
+    weight_movement: float = 0.1,
+    min_velocity: float = 0.1,
+) -> torch.Tensor:
+    """Reward coordinated arm swing to cancel torso angular momentum.
+    
+    Encourages natural arm swing during walking by:
+    1. Minimizing total body angular momentum (arms cancel torso rotation)
+    2. Ensuring symmetric arm contributions (both arms contribute equally to the cancellation of momentum)
+    3. Encouraging active arm movement
+    
+    The reward is scaled by velocity to only activate during locomotion.
+    
+    Args:
+        env: Environment instance
+        weight_symmetry: Weight for (L_la - L_ra)² term
+        weight_movement: Weight for movement encouragement term
+        min_velocity: Minimum velocity to fully activate reward
+        normalize_by_mass: If True, normalize momentum by total mass
+        
+    Returns:
+        Reward tensor [num_envs]
+    """
+    # Compute angular momenta for ALL body parts
+    L_torso_z = _compute_angular_momentum_z(env, env.torso_indices, env.torso_masses)
+    L_la_z = _compute_angular_momentum_z(env, env.left_arm_indices, env.left_arm_masses)
+    L_ra_z = _compute_angular_momentum_z(env, env.right_arm_indices, env.right_arm_masses)
+    L_ll_z = _compute_angular_momentum_z(env, env.left_leg_indices, env.left_leg_masses)
+    L_rl_z = _compute_angular_momentum_z(env, env.right_leg_indices, env.right_leg_masses)
+    
+    # Total body angular momentum
+    L_total_z = L_torso_z + L_la_z + L_ra_z + L_ll_z + L_rl_z
+    # L_total_z = L_la_z + L_ra_z + L_ll_z + L_rl_z
+    
+    # Term 1: Minimize total angular momentum
+    term1 = L_total_z ** 2
+    
+    # Term 2: Symmetric arm contributions
+    term2 = (L_la_z - L_ra_z) ** 2
+    
+    # Term 3: Encourage non-zero arm movement
+    term3 = torch.abs(L_la_z) + torch.abs(L_ra_z)
+    # print("Only term 3 is used, the value is {}".format(term3))
+    
+    # Explicitly penalize torso rotation
+    # w_torso_rotation = 0.1
+    # term4 = L_torso_z ** 2
+
+    # Combined reward (negative because we minimize terms 1&2, maximize term 3)
+    # reward = -(term1 + weight_symmetry * term2 - weight_movement * term3)
+    # reward = term3
+    # reward = -term1 - weight_symmetry * term2
+    reward = -term1 - weight_symmetry * term2 #+ weight_movement * term3 #- w_torso_rotation * term4
+
+    # Scale by velocity command (only active when walking)
+    commands = env.command_manager.commands
+    velocity_magnitude = torch.norm(commands[:, :2], dim=1)  # xy velocity
+    velocity_scale = torch.clamp(velocity_magnitude / min_velocity, 0.0, 1.0)
+    
+    return reward * velocity_scale
+
+# Helpers for angular momentum calculation
+def _compute_angular_momentum_z(
+    env,
+    link_indices: list[int],
+    link_masses: torch.Tensor,
+) -> torch.Tensor:
+    """Compute z-component of angular momentum for specified links in body frame.
+    
+    Uses point mass approximation: L_z = Σ(m * (r_x * v_y - r_y * v_x))
+    
+    Args:
+        env: Environment instance
+        link_indices: List of rigid body indices to include
+        link_masses: Tensor of masses for these links [num_links]
+        
+    Returns:
+        Angular momentum z-component [num_envs]
+    """
+    
+    # Get base position and quaternion (xyzw format in IsaacGym)
+    base_pos = env.simulator.robot_root_states[:, :3]  # [num_envs, 3]
+    base_quat = env.simulator.base_quat  # [num_envs, 4] xyzw format
+    
+    L_z = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+    
+    for i, link_idx in enumerate(link_indices):
+        link_pos_w = env.simulator._rigid_body_pos[:, link_idx, :]
+        link_vel_w = env.simulator._rigid_body_vel[:, link_idx, :]
+        
+        r_w = link_pos_w - base_pos
+        
+        r_b = quat_rotate_inverse(base_quat, r_w, w_last=True) # IssacGym uses xyzw format
+        v_b = quat_rotate_inverse(base_quat, link_vel_w, w_last=True)
+        
+        m = link_masses[i]
+        L_z += m * (r_b[:, 0] * v_b[:, 1] - r_b[:, 1] * v_b[:, 0])
+    
+    return L_z

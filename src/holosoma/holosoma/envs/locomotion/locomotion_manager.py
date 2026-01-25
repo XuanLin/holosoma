@@ -21,7 +21,83 @@ class LeggedRobotLocomotionManager(BaseTask):
             tyro_config,
             device=device,
         )
+
+        # Setup link groups and masses for momentum computation
+        self._setup_momentum_computation()
+
         self.init_done = True
+
+    def _setup_momentum_computation(self):
+        """Setup link groups and cache masses for angular momentum computation."""
+
+        # ================== Body Structure =================
+        # body_names: ['Trunk', 'H1', 'H2', 'AL1', 'AL2', 'AL3', 'AL4', 'AL5', 'AL6', 'left_hand_link', 'AR1', 'AR2', 'AR3', 'AR4', 'AR5', 'AR6', 'right_hand_link', 'Waist', 'Hip_Pitch_Left', 'Hip_Roll_Left', 'Hip_Yaw_Left', 'Shank_Left', 'Ankle_Cross_Left', 'left_foot_link', 'left_foot_contact_point', 'Hip_Pitch_Right', 'Hip_Roll_Right', 'Hip_Yaw_Right', 'Shank_Right', 'Ankle_Cross_Right', 'right_foot_link', 'right_foot_contact_point']
+        # Number of bodies: 32
+        # ================== Mass Properties =================
+        # Body 0 (Trunk): mass=12.224
+        # Body 1 (H1): mass=0.444
+        # Body 2 (H2): mass=0.631
+        # Body 3 (AL1): mass=0.530
+        # Body 4 (AL2): mass=0.160
+        # Body 5 (AL3): mass=1.020
+        # Body 6 (AL4): mass=0.298
+        # Body 7 (AL5): mass=0.422
+        # Body 8 (AL6): mass=0.265
+        # Body 9 (left_hand_link): mass=0.249
+        # Body 10 (AR1): mass=0.530
+        # Body 11 (AR2): mass=0.160
+        # Body 12 (AR3): mass=1.020
+        # Body 13 (AR4): mass=0.360
+        # Body 14 (AR5): mass=0.434
+        # Body 15 (AR6): mass=0.282
+        # Body 16 (right_hand_link): mass=0.246
+        # Body 17 (Waist): mass=2.581
+        # Body 18 (Hip_Pitch_Left): mass=0.944
+        # Body 19 (Hip_Roll_Left): mass=0.395
+        # Body 20 (Hip_Yaw_Left): mass=2.431
+        # Body 21 (Shank_Left): mass=1.566
+        # Body 22 (Ankle_Cross_Left): mass=0.072
+        # Body 23 (left_foot_link): mass=0.818
+        # Body 24 (left_foot_contact_point): mass=0.001
+        # Body 25 (Hip_Pitch_Right): mass=0.939
+        # Body 26 (Hip_Roll_Right): mass=0.349
+        # Body 27 (Hip_Yaw_Right): mass=2.056
+        # Body 28 (Shank_Right): mass=2.043
+        # Body 29 (Ankle_Cross_Right): mass=0.078
+        # Body 30 (right_foot_link): mass=0.765
+        # Body 31 (right_foot_contact_point): mass=0.001
+        
+        # Define link indices for momentum computation
+        # Based on T1 robot structure: AL* = left arm, AR* = right arm
+        self.torso_indices = [0, 1, 2, 17]  # Trunk, H1, H2, Waist
+        self.left_arm_indices = [3, 4, 5, 6, 7, 8, 9]  # AL1-6, left_hand_link
+        self.right_arm_indices = [10, 11, 12, 13, 14, 15, 16]  # AR1-6, right_hand_link
+        self.left_leg_indices = [18, 19, 20, 21, 22, 23]  # Left leg Hip_Pitch/Roll/Yaw, Shank, Ankle, foot (exclude contact point)
+        self.right_leg_indices = [25, 26, 27, 28, 29, 30]  # Right leg
+        
+        # Cache masses for all bodies
+        rb_props = self.simulator.gym.get_actor_rigid_body_properties(
+            self.simulator.envs[0],
+            self.simulator.robot_handles[0]
+        )
+        
+        # Store as tensors on device for efficient computation
+        masses = torch.tensor([prop.mass for prop in rb_props], 
+                            dtype=torch.float32, device=self.device)
+        
+        # Create mass tensors for each group (shape: [num_links_in_group])
+        self.torso_masses = masses[self.torso_indices]
+        self.left_arm_masses = masses[self.left_arm_indices]
+        self.right_arm_masses = masses[self.right_arm_indices]
+        self.left_leg_masses = masses[self.left_leg_indices]
+        self.right_leg_masses = masses[self.right_leg_indices]
+        
+        # Total mass for each group (for potential normalization)
+        self.total_torso_mass = self.torso_masses.sum().item()
+        self.total_left_arm_mass = self.left_arm_masses.sum().item()
+        self.total_right_arm_mass = self.right_arm_masses.sum().item()
+        self.total_left_leg_mass = self.left_leg_masses.sum().item()
+        self.total_right_leg_mass = self.right_leg_masses.sum().item()
 
     def _get_task_name(self) -> str:
         return "locomotion"

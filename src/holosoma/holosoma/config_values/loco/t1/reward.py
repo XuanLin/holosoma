@@ -62,21 +62,25 @@ t1_29dof_loco = RewardManagerCfg(
                 "pose_weights": [
                     50.0,
                     50.0,
+
+                    2.0,
+                    20.0,
+                    20.0,
+                    2.0,
+                    20.0,
+                    2.0,
+                    20.0,
+
+                    2.0,
+                    20.0,
+                    20.0,
+                    2.0,
+                    20.0,
+                    2.0,
+                    20.0,
+
                     50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
+
                     0.01,
                     1.0,
                     5.0,
@@ -93,6 +97,19 @@ t1_29dof_loco = RewardManagerCfg(
             },
             tags=["penalty_curriculum"],
         ),
+
+
+        "arm_momentum_coordination": RewardTermCfg(
+            func="holosoma.managers.reward.terms.locomotion:arm_momentum_coordination",
+            weight=1.0,
+            params={
+                "weight_symmetry": 0.5,      # Penalize asymmetric arms
+                "weight_movement": 0.1,      # Encourage arm swing
+                "min_velocity": 0.1,         # m/s threshold
+            },
+        ),
+
+
     },
 )
 
@@ -139,20 +156,23 @@ t1_29dof_loco_fast_sac = RewardManagerCfg(
                 "pose_weights": [
                     50.0,
                     50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
-                    50.0,
+
+                    2.0,
+                    20.0,
+                    20.0,
+                    2.0,
+                    20.0,
+                    2.0,
+                    20.0,
+
+                    2.0,
+                    20.0,
+                    20.0,
+                    2.0,
+                    20.0,
+                    2.0,
+                    20.0,
+                    
                     50.0,
                     0.01,
                     1.0,
@@ -187,6 +207,17 @@ t1_29dof_loco_fast_sac = RewardManagerCfg(
             weight=10.0,
             params={},
         ),
+
+        "arm_momentum_coordination": RewardTermCfg(
+            func="holosoma.managers.reward.terms.locomotion:arm_momentum_coordination",
+            weight=1.0,
+            params={
+                "weight_symmetry": 0.5,      # Penalize asymmetric arms
+                "weight_movement": 0.1,      # Encourage arm swing
+                "min_velocity": 0.1,         # m/s threshold
+            },
+        ),
+        
     },
 )
 
