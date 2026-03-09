@@ -101,14 +101,35 @@ t1_29dof_loco = RewardManagerCfg(
 
         "arm_momentum_coordination": RewardTermCfg(
             func="holosoma.managers.reward.terms.locomotion:arm_momentum_coordination",
-            weight=1.0,
+            weight=5.0,
             params={
                 "weight_symmetry": 0.5,      # Penalize asymmetric arms
                 "weight_movement": 0.1,      # Encourage arm swing
                 "min_velocity": 0.1,         # m/s threshold
             },
+            tags=["penalty_curriculum"],
         ),
 
+        "push_off_reward": RewardTermCfg(
+            func="holosoma.managers.reward.terms.locomotion:push_off_reward",
+            weight=5.0,
+            params={
+                "push_off_phase_start": 0.1,      # Start detecting push-off 
+                "push_off_phase_end": 0.3,        # End
+                "velocity_weight_vertical": 1.0,  # Vertical velocity
+                "velocity_weight_forward": 1.0,   # Forward velocity
+                "min_contact_force": 1.0,         # 1N minimum force
+            },
+        ),
+
+        "flight_phase": RewardTermCfg(
+            func="holosoma.managers.reward.terms.locomotion:flight_phase",
+            weight=10.0,
+            params={
+                "min_speed_threshold": 0.2,
+                "max_speed_threshold": 3.0,
+            },
+        ),
 
     },
 )
@@ -208,16 +229,40 @@ t1_29dof_loco_fast_sac = RewardManagerCfg(
             params={},
         ),
 
+
         "arm_momentum_coordination": RewardTermCfg(
             func="holosoma.managers.reward.terms.locomotion:arm_momentum_coordination",
-            weight=1.0,
+            weight=8.0,
             params={
                 "weight_symmetry": 0.5,      # Penalize asymmetric arms
                 "weight_movement": 0.1,      # Encourage arm swing
                 "min_velocity": 0.1,         # m/s threshold
             },
+            tags=["penalty_curriculum"],
+        ),
+
+        "push_off_reward": RewardTermCfg(
+            func="holosoma.managers.reward.terms.locomotion:push_off_reward",
+            weight=5.0,
+            params={
+                "push_off_phase_start": 0.1,      # Start detecting push-off 
+                "push_off_phase_end": 0.3,        # End
+                "velocity_weight_vertical": 1.0,  # Vertical velocity
+                "velocity_weight_forward": 1.0,   # Forward velocity
+                "min_contact_force": 1.0,         # 1N minimum force
+            },
         ),
         
+        "flight_phase": RewardTermCfg(
+            func="holosoma.managers.reward.terms.locomotion:flight_phase",
+            weight=10.0,
+            params={
+                "min_speed_threshold": 0.2,
+                "max_speed_threshold": 3.0,
+            },
+        ),
+
+
     },
 )
 

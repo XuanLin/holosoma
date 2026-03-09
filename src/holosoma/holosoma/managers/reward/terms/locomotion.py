@@ -493,3 +493,148 @@ def _compute_angular_momentum_z(
         L_z += m * (r_b[:, 0] * v_b[:, 1] - r_b[:, 1] * v_b[:, 0])
     
     return L_z
+
+# Reward for strong push-off for promoting running
+def push_off_reward(
+    env,
+    push_off_phase_start: float = 0.1,
+    push_off_phase_end: float = 0.3,
+    velocity_weight_vertical: float = 1.0,
+    velocity_weight_forward: float = 1.0,
+    min_contact_force: float = 1.0,
+    froude_threshold: float = 0.5,
+) -> torch.Tensor:
+    """Reward strong vertical and forward velocity during push-off phase.
+    
+    During running, the robot should generate explosive upward and forward velocity
+    when the foot is in late stance (push-off phase). This reward activates when:
+    1. Foot phase is in push-off range
+    2. Foot has ground contact
+    3. Base has positive upward and forward velocity
+    """
+    # Calculate Froude number: Fr = v**2 / (g * L)
+    commands = env.command_manager.commands
+    velocity_x = commands[:, 0] # Commanded forward velocity
+    # leg_length = 0.65 # Leg length (m) - booster t1 is ~65cm
+    # g = 9.81
+    # froude_number = (velocity_x ** 2) / (g * leg_length)
+    
+    # Scale reward based on speed (0 at min_speed, 1.0 at max_speed)
+    min_speed_threshold = 0.1
+    max_speed_threshold = 1.0
+    speed_scale = torch.clamp(
+        (torch.abs(velocity_x) - min_speed_threshold) / (max_speed_threshold - min_speed_threshold),
+        0.0, 1.0
+    )
+
+    # Only apply reward when running (Fr > threshold)
+    # is_running = froude_number > froude_threshold
+
+    # env_idx = 0
+    # velocity_x_single = velocity_x[env_idx].item()  # .item() converts tensor to Python scalar
+    # is_moving_single = velocity_x_single > 0.1
+    # if is_moving_single:
+    #     print("="*60)
+    #     print("forward velocity is {}".format(velocity_x))
+    #     debug_gait_phase(env)
+
+    gait_state = env.command_manager.get_state("locomotion_gait")
+    
+    # Get base velocity from root states [num_envs, 13]
+    # Structure: [x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz]
+    base_lin_vel = env.simulator.robot_root_states[:, 7:10]  # [num_envs, 3] -> (vx, vy, vz)
+    
+    reward = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+    
+    for foot_idx in [0, 1]:  # Left foot (0) and right foot (1)
+        # Get phase for this foot: range [-π, π]
+        phase = gait_state.phase[:, foot_idx]  # [num_envs]
+        
+        # Normalize phase to [0, 1] range
+        # phase = -π -> 0, phase = 0 -> 0.5, phase = π -> 1.0
+        phase_normalized = (phase + torch.pi) / (2 * torch.pi)
+        
+        # Detect push-off phase window
+        # This is the late stance when foot should generate explosive force
+        in_push_off_window = (phase_normalized >= push_off_phase_start) & \
+                             (phase_normalized <= push_off_phase_end)
+        
+        # Check if foot has contact with ground
+        foot_contact_force_z = env.simulator.contact_forces[:, env.feet_indices[foot_idx], 2]
+        has_contact = foot_contact_force_z > min_contact_force
+        
+        # Both conditions must be true for valid push-off
+        is_pushing_off = in_push_off_window & has_contact
+
+        # Get velocity components
+        v_vertical = base_lin_vel[:, 2]  # z-axis (up is positive)
+        v_forward = base_lin_vel[:, 0]   # x-axis (forward is positive)
+        
+        velocity_in_commanded_dir = torch.sign(velocity_x) * v_forward
+
+        velocity_reward = (velocity_weight_vertical * torch.relu(v_vertical) + 
+                        velocity_weight_forward * torch.relu(velocity_in_commanded_dir))
+        
+        # Apply reward only during push-off phase with contact
+        reward += is_pushing_off.float() * velocity_reward * speed_scale
+    
+    return reward
+
+
+def debug_gait_phase(env) -> None:
+    """Debug helper to print phase and contact info."""
+    gait_state = env.command_manager.get_state("locomotion_gait")
+    
+    # Sample one environment
+    env_idx = 0
+    
+    left_phase = gait_state.phase[env_idx, 0].item()
+    right_phase = gait_state.phase[env_idx, 1].item()
+    
+    left_contact = env.simulator.contact_forces[env_idx, env.feet_indices[0], 2].item()
+    right_contact = env.simulator.contact_forces[env_idx, env.feet_indices[1], 2].item()
+    
+    # Normalize to [0, 1]
+    left_norm = (left_phase + 3.14159) / (2 * 3.14159)
+    right_norm = (right_phase + 3.14159) / (2 * 3.14159)
+    
+    print(f"Left  phase: {left_phase:.2f} (norm: {left_norm:.2f}), contact: {left_contact:.1f}N")
+    print(f"Right phase: {right_phase:.2f} (norm: {right_norm:.2f}), contact: {right_contact:.1f}N")
+
+def flight_phase(
+    env,
+    min_speed_threshold: float = 0.2,
+    max_speed_threshold: float = 3.0,
+) -> torch.Tensor:
+    """Reward when both feet are off the ground (flight phase).
+    
+    Flight phase is characteristic of running vs walking. This reward encourages
+    the robot to have periods where both feet are airborne.
+    
+    Args:
+        env: Environment instance
+        min_speed_threshold: Minimum speed to start rewarding flight (m/s)
+        max_speed_threshold: Speed for full reward scaling
+        
+    Returns:
+        Reward tensor [num_envs]
+    """
+    # Get commanded speed
+    commands = env.command_manager.commands
+    commanded_speed = torch.norm(commands[:, :2], dim=1)  # xy velocity magnitude
+    
+    # Scale reward by speed (only at running speeds)
+    speed_scale = torch.clamp(
+        (commanded_speed - min_speed_threshold) / (max_speed_threshold - min_speed_threshold),
+        0.0, 1.0
+    )
+    
+    # Check contact for both feet
+    left_contact = env.simulator.contact_forces[:, env.feet_indices[0], 2] > 1.0
+    right_contact = env.simulator.contact_forces[:, env.feet_indices[1], 2] > 1.0
+    
+    # Both feet off ground = flight
+    in_flight = ~(left_contact | right_contact)
+    
+    # Reward flight at running speeds
+    return in_flight.float() * speed_scale
