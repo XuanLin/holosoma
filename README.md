@@ -2,6 +2,14 @@
 
 Holosoma (Greek: "whole-body") is a comprehensive humanoid robotics framework for training and deploying reinforcement learning policies on humanoid robots, as well as motion retargeting. Supports locomotion (velocity tracking) and whole-body tracking tasks across multiple simulators (IsaacGym, IsaacSim, MJWarp, MuJoCo) with algorithms like PPO and FastSAC.
 
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="gif/running_forward.gif" width="100%" alt="Running Forward"><br>Running Forward</td>
+    <td align="center"><img src="gif/running_backward.gif" width="100%" alt="Running Backward"><br>Running Backward</td>
+  </tr>
+</table>
+
 ## Features
 
 - **Multi-simulator support**: IsaacGym, IsaacSim, MuJoCo Warp (MJWarp), and MuJoCo (inference only)
